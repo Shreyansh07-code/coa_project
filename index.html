@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Industrial Robot Controller – 3D Cell</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#e6eaed;--panel:#f7f8f9;--ink:#1b2530;--mut:#5d6b78;--line:#d3d9de;--acc:#e8a900;--ok:#2f9e44;--bad:#d62828;--warn:#e67700;--chip:#fff;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171d23;--panel:#1f272f;--ink:#e8edf1;--mut:#9aa8b5;--line:#33404c;--chip:#27323c}}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{font:15px/1.45 Barlow,system-ui,sans-serif;background:var(--bg);color:var(--ink);display:grid;grid-template-columns:1fr 370px;height:100%}
+#stage{position:relative;overflow:hidden;min-height:0}canvas#c{width:100%;height:100%;display:block;touch-action:none}
+#bar{position:absolute;left:10px;top:10px;right:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+button{font:600 14px Barlow,sans-serif;border:1px solid var(--line);background:var(--chip);color:var(--ink);padding:7px 12px;border-radius:6px;cursor:pointer}
+button:hover{border-color:var(--ink)}button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+button.on{background:var(--ink);color:var(--panel)}button.bad{background:var(--bad);color:#fff;border-color:var(--bad)}
+.sp{display:flex;align-items:center;gap:6px;background:var(--chip);border:1px solid var(--line);border-radius:6px;padding:4px 10px;font-weight:600;font-size:14px}
+.lab{position:absolute;pointer-events:none;transform:translate(-50%,-100%);background:var(--ink);color:var(--panel);font-size:12px;font-weight:600;padding:2px 7px;border-radius:4px;white-space:nowrap;opacity:.88}
+#hint{position:absolute;left:12px;bottom:10px;font-size:13px;color:var(--mut)}
+aside{background:var(--panel);border-left:1px solid var(--line);overflow:auto;padding:16px}
+h1{font:700 26px/1.05 'Barlow Condensed',sans-serif;margin:0 0 2px}h2{font:700 17px 'Barlow Condensed',sans-serif;margin:18px 0 6px}
+.sub{color:var(--mut);margin:0 0 10px;font-size:14px}
+#state{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--chip)}
+#state b{font:700 20px 'Barlow Condensed',sans-serif;min-width:96px}#state span{font-size:14px;color:var(--mut)}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+ol{margin:0;padding:0;list-style:none;display:grid;gap:2px}ol li{padding:4px 8px;border-radius:5px;font-size:14px;color:var(--mut);border-left:3px solid transparent}
+ol li.act{background:var(--chip);color:var(--ink);border-left-color:var(--acc);font-weight:600}ol li.done{opacity:.55}
+#sig{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px}.sg{display:flex;gap:7px;align-items:center;font-size:14px}
+.dot{width:11px;height:11px;border-radius:50%;background:var(--line);flex:none}.dot.h{background:var(--ok)}.dot.f{background:var(--bad)}
+#js{display:flex;gap:4px;margin-bottom:6px}#js button{padding:4px 0;flex:1}
+canvas#plot{width:100%;height:110px;background:var(--chip);border:1px solid var(--line);border-radius:6px}
+#ro{font-size:14px;margin-top:4px;font-variant-numeric:tabular-nums}
+#card{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:12px}#card h3{margin:0 0 4px;font:700 19px 'Barlow Condensed',sans-serif}
+#card p{margin:4px 0}#card .k{font-weight:600}
+#chips{display:flex;flex-wrap:wrap;gap:5px}#chips button{padding:3px 9px;font-size:13px;font-weight:500}
+@media (max-width:860px){body{grid-template-columns:1fr;grid-template-rows:60vh auto;height:auto;overflow:auto}html{height:auto}aside{border-left:0;border-top:1px solid var(--line)}}
+</style></head><body>
+<div id="stage"><canvas id="c"></canvas>
+<div id="bar"><button id="bPause">Pause</button><button id="bEstop" class="bad">E-stop</button><button id="bGate">Open safety gate</button><button id="bFault">Inject encoder fault</button><button id="bLab" class="on">Labels</button>
+<label class="sp">Speed <input id="spd" type="range" min="0.3" max="2" step="0.1" value="1"></label></div>
+<div id="hint">Drag to orbit · scroll or pinch to zoom · click any part to learn what it does</div></div>
+<aside>
+<h1>Industrial Robot Controller</h1><p class="sub">Live pick-weld-place cell: the controller runs the program, drives six servo joints and talks to the PLC.</p>
+<div id="state"><b id="stN">RUNNING</b><span id="stM"></span></div>
+<h2>Program cycle</h2><ol id="steps"></ol>
+<h2>Robot–PLC signals</h2><div id="sig"></div>
+<h2>Closed-loop control: e(t) = qd − qa</h2>
+<div id="js"></div><canvas id="plot" width="640" height="220"></canvas><div id="ro"></div>
+<h2>Selected part</h2><div id="card"></div>
+<h2>All parts</h2><div id="chips"></div>
+</aside>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const $=i=>document.getElementById(i),V3=THREE.Vector3,dark=matchMedia('(prefers-color-scheme:dark)').matches;
+const L1=1.5,L2=1.4,T=.55,SY=1,PP=-1,PI=Math.PI;
+function ik(phi,r,y){const hw=y+T-SY,d=Math.min(Math.hypot(r,hw),L1+L2-.01),g=Math.acos((L1*L1+L2*L2-d*d)/(2*L1*L2)),a2=PI-g,a1=Math.atan2(r,hw)-Math.atan2(L2*Math.sin(a2),L1+L2*Math.cos(a2));return[phi,a1,a2,0,PI-a1-a2,phi-PP]}
+const POSE={home:ik(-.2,1.6,1.9),pickUp:ik(PP,2.1,1.7),pick:ik(PP,2.1,1.05),weld:ik(.5,2,1.45),outUp:ik(2.3,2.1,1.7),out:ik(2.3,2.1,.9)};
+const INFO={
+base:['Robot base','Bolts the robot to the floor and carries the whole arm.','Holds the J1 servo motor and encoder. Cables from the controller (power and feedback) enter here.'],
+j1:['J1 – base rotation','Turns the whole arm left and right around the vertical axis.','The controller sends a position command to this servo drive; the J1 encoder reports the real angle back.'],
+j2:['J2 – shoulder + upper arm','Swings the upper arm forward and back to set reach and height.','Carries the heaviest load, so the controller applies its strongest torque control here.'],
+j3:['J3 – elbow + forearm','Bends the forearm to set how far the hand reaches.','With J2 it solves inverse kinematics: given a target (x, y, z), the controller computes q2 and q3.'],
+j5:['J4–J6 – wrist','Orients the tool. J5 pitches the wrist to keep the gripper pointing down; J6 rolls it to keep the part aligned.','Wrist joints are small and fast. Six joints in total are moved together so the tool follows a smooth path.'],
+tool:['End effector (gripper)','Two fingers that close on the metal part to pick it up and open to release it.','The program commands GRIPPER CLOSE / OPEN. Its digital I/O is handled by the controller.'],
+ctrl:['Robot controller cabinet','The brain of the robot: runs the program, calculates trajectories and inverse kinematics, and drives six servo amplifiers.','Compares desired and actual joint angles every cycle, monitors safety and faults, and talks to the PLC.'],
+pendant:['Teach pendant','Handheld unit used to jog the robot, record positions, edit programs and read fault messages.','Has its own enabling switch and E-stop, wired into the controller safety circuit.'],
+plc:['PLC','Coordinates the whole line: reads sensors, starts the conveyor and tells the robot when to work.','Exchanges Robot Ready / Start / Busy / Complete / Fault signals with the controller over EtherNet/IP, PROFINET or Modbus TCP.'],
+conv:['Conveyor','Brings raw metal parts to the pickup position.','Run by the PLC. It stops when the proximity sensor sees a part.'],
+sensor:['Proximity sensor','Detects that a part has arrived at the pickup point.','Raises Part Present to the PLC, which then sends the start request to the robot.'],
+weld:['Welding station','Fixed torch that welds the part while the robot holds it in position.','The robot holds still for the process time; the controller waits for the process to finish before moving on.'],
+bin:['Output table','Where the finished part is placed.','The robot lowers to this position, opens the gripper, then returns home and signals Robot Complete.'],
+fence:['Safety fence, gate and light curtain','Keep people out of the robot working area while it runs.','Opening the gate breaks the safety interlock: the controller refuses automatic operation. Try the "Open safety gate" button.'],
+estop:['Emergency-stop button','Instantly puts the robot in a safe state.','Cuts servo power and holds the brakes. The controller will not run until it is released.']};
+const STEPS=[['Wait for part','PLC runs the conveyor; the sensor detects the part.'],['PLC request + safety check','Controller checks E-stop, gate, servo ready, joint position.'],['Move above pickup','Inverse kinematics → smooth cubic joint trajectory.'],['Descend to pickup','Slow approach; encoders correct every cycle.'],['Close gripper','Gripper closes and the part is lifted with the arm.'],['Lift part','Arm rises with the part.'],['Move to weld station','Six joints move together to the weld pose.'],['Welding','Robot holds still while the process runs.'],['Move above output','Transfer to the output table.'],['Lower to output','Controlled descent.'],['Open gripper','Part released; Robot Complete sent to PLC.'],['Return home','Back to home; ready for the next part.']];
+const SIG=['Robot Ready','Robot Start','Robot Busy','Robot Complete','Robot Fault','Part Present','Safety OK'];
+// ---------- scene
+const cv=$('c'),R=new THREE.WebGLRenderer({canvas:cv,antialias:true});R.shadowMap.enabled=true;R.setPixelRatio(Math.min(devicePixelRatio,2));
+const S=new THREE.Scene();S.background=new THREE.Color(dark?0x171d23:0xe6eaed);
+const cam=new THREE.PerspectiveCamera(42,1,.1,100);
+S.add(new THREE.HemisphereLight(0xffffff,dark?0x30404f:0x9aa5b1,.85));
+const sun=new THREE.DirectionalLight(0xffffff,.9);sun.position.set(5,9,4);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);Object.assign(sun.shadow.camera,{left:-7,right:7,top:7,bottom:-7});S.add(sun);
+const fl=new THREE.Mesh(new THREE.PlaneGeometry(24,24),new THREE.MeshStandardMaterial({color:dark?0x232c34:0xcfd5da,roughness:.9}));fl.rotation.x=-PI/2;fl.receiveShadow=true;S.add(fl);
+const gr=new THREE.GridHelper(24,24,dark?0x3a4854:0xb5bdc4,dark?0x2c3640:0xc0c7cd);gr.position.y=.01;S.add(gr);
+const parts={};
+const M=(c,o={})=>new THREE.MeshStandardMaterial(Object.assign({color:c,roughness:.55,metalness:.25},o));
+function mk(g,c,id,par,x=0,y=0,z=0){const m=new THREE.Mesh(g,M(c));m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;if(id){m.userData.id=id;(parts[id]=parts[id]||[]).push(m)}par.add(m);return m}
+const Bx=(w,h,d)=>new THREE.BoxGeometry(w,h,d),Cy=(r,h,s=28)=>new THREE.CylinderGeometry(r,r,h,s),CyZ=(r,h)=>Cy(r,h).rotateX(PI/2);
+const YEL=0xf2b705,DK=0x33404d,TEAL=0x0f766e;
+// robot
+const yawG=new THREE.Group();S.add(yawG);
+mk(Cy(.6,.25),DK,'base',S,0,.125,0);mk(Cy(.38,.25),DK,'base',S,0,.37,0);
+mk(Bx(.55,.55,.55),YEL,'j1',yawG,0,.72,0);mk(Cy(.3,.12),DK,'j1',yawG,0,.5,0);
+const shG=new THREE.Group();shG.position.y=SY;yawG.add(shG);
+mk(CyZ(.27,.5),DK,'j2',shG);mk(Bx(.26,L1,.3),YEL,'j2',shG,0,L1/2,0);
+const elG=new THREE.Group();elG.position.y=L1;shG.add(elG);
+mk(CyZ(.23,.46),DK,'j3',elG);
+const fRoll=new THREE.Group();elG.add(fRoll);mk(Bx(.22,L2,.24),YEL,'j3',fRoll,0,L2/2,0);
+const wrG=new THREE.Group();wrG.position.y=L2;elG.add(wrG);
+mk(CyZ(.17,.34),DK,'j5',wrG);
+const rl6=new THREE.Group();wrG.add(rl6);mk(Cy(.13,.12),DK,'j5',rl6,0,.1,0);mk(Cy(.05,T),0x8a97a3,'tool',rl6,0,T/2,0);
+const tip=new THREE.Group();tip.position.y=T;rl6.add(tip);
+const fingA=mk(Bx(.06,.3,.2),0x5a6773,'tool',rl6,.23,T+.1,0),fingB=mk(Bx(.06,.3,.2),0x5a6773,'tool',rl6,-.23,T+.1,0);
+// conveyor at pickup point
+const pu=new V3(Math.cos(PP),0,-Math.sin(PP)).multiplyScalar(2.1),tx=-(-Math.sin(PP)),tz=Math.cos(PP);
+const cvG=new THREE.Group();cvG.position.copy(pu);cvG.rotation.y=Math.atan2(-tz,tx);S.add(cvG);
+mk(Bx(5.2,.1,.8),0x2b3138,'conv',cvG,0,.75,0);mk(Bx(5.2,.08,.06),0x8a97a3,'conv',cvG,0,.8,.43);mk(Bx(5.2,.08,.06),0x8a97a3,'conv',cvG,0,.8,-.43);
+[-2.4,0,2.4].forEach(x=>{mk(Bx(.1,.7,.7),0x5a6773,'conv',cvG,x,.35,0)});
+const slats=[];for(let i=0;i<14;i++)slats.push(mk(Bx(.05,.012,.7),0x454d56,null,cvG,0,.805,0));
+mk(Bx(.1,.5,.1),0x5a6773,'sensor',cvG,0,1.0,-.52);const sLed=mk(new THREE.SphereGeometry(.06),0xff0000,null,cvG,0,1.3,-.52);sLed.material.emissive.set(0xff0000);
+mk(Bx(.1,.5,.1),0x5a6773,'sensor',cvG,0,1.0,.52);
+const beam=mk(Cy(.008,1.04),0xff3b3b,null,cvG,0,1.05,0);beam.rotation.x=PI/2;beam.material.emissive.set(0xff2222);beam.castShadow=false;
+// light curtain
+[-1.3].forEach(x=>{[-.55,.55].forEach(z=>mk(Bx(.07,1.1,.07),0x333,'fence',cvG,x,1.05,z));const p=mk(Bx(.01,1,1.05),0xff4444,'fence',cvG,x,1.05,0);p.material.transparent=true;p.material.opacity=.18;p.material.emissive.set(0xff2020);p.castShadow=false});
+// part
+const part=mk(Bx(.4,.25,.4),0xaab4be,null,cvG,-2.2,.925,0);
+// weld station
+const wG=new THREE.Group();wG.rotation.y=.5;S.add(wG);
+mk(Cy(.3,.9),0x6a7782,'weld',wG,2,.45,0);mk(Cy(.45,.06),DK,'weld',wG,2,.03,0);
+const torch=mk(new THREE.ConeGeometry(.07,.5,16),0xc0392b,'weld',wG,2.51,1.47,0);torch.rotation.z=2.16;
+mk(Cy(.04,1.1),0x6a7782,'weld',wG,2.9,.55,0);mk(Bx(.5,.06,.06),0x6a7782,'weld',wG,2.7,1.1,0).rotation.z=.5;
+const SP=64,spPos=new Float32Array(SP*3),spV=[];for(let i=0;i<SP;i++)spV.push(new V3());
+const sparks=new THREE.Points(new THREE.BufferGeometry().setAttribute('position',new THREE.BufferAttribute(spPos,3)),new THREE.PointsMaterial({color:0xffb020,size:.05}));sparks.frustumCulled=false;sparks.visible=false;wG.add(sparks);
+const wl=new THREE.PointLight(0xffa040,0,4);wl.position.set(2.25,1.33,0);wG.add(wl);
+// output table
+const oG=new THREE.Group();oG.rotation.y=2.3;S.add(oG);mk(Cy(.5,.65),0x6a7782,'bin',oG,2.1,.325,0);mk(Cy(.52,.04),YEL,'bin',oG,2.1,.67,0);
+// fence
+const fm=new THREE.MeshStandardMaterial({color:0xf2c200,transparent:true,opacity:.22,side:THREE.DoubleSide});
+function panel(par,x,z,ry,w=1.5){const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=ry;const m=new THREE.Mesh(Bx(w,1.1,.04),fm);m.position.set(0,.65,0);m.userData.id='fence';(parts.fence=parts.fence||[]).push(m);g.add(m);
+const l=new THREE.LineSegments(new THREE.EdgesGeometry(Bx(w,1.1,.04)),new THREE.LineBasicMaterial({color:0xd9a400}));l.position.copy(m.position);g.add(l);par.add(g);return g}
+[-2.2,-.6,1.0].forEach(z=>panel(S,-2.9,z,PI/2));[-2.1,-.5,1.1,2.7].forEach(x=>panel(S,x,-3,0));
+const gate=panel(S,-2.9,1.8,PI/2);const gp=gate.children[0],gl=gate.children[1];gate.position.set(-2.9,0,1.8);gp.position.z=.75;gl.position.z=.75;gp.position.y=gl.position.y=.65;
+const gateP=new THREE.Group();gateP.position.copy(gate.position);S.add(gateP);gate.position.set(0,0,0);gateP.add(gate);gate.rotation.y=PI/2;
+// controller + PLC
+const cG=new THREE.Group();cG.position.set(-3.8,0,.3);S.add(cG);
+mk(Bx(.8,1.7,.9),TEAL,'ctrl',cG,0,.85,0);mk(Bx(.02,.35,.5),0x0a2a2a,'ctrl',cG,.41,1.25,0).material.emissive.set(0x0b5);
+const leds=[0x22cc55,0xffaa00,0xff3333].map((c,i)=>{const l=mk(new THREE.SphereGeometry(.04),c,null,cG,.42,1.0,-.2+i*.2);l.material.emissive.set(c);return l});
+const eb=mk(Cy(.09,.06),0xd62828,'estop',cG,.43,.7,0);eb.rotation.z=PI/2;eb.material.emissive.set(0x700000);mk(Cy(.15,.02),0xf2c200,'estop',cG,.41,.7,0).rotation.z=PI/2;
+const pG=new THREE.Group();pG.position.set(-3.8,0,-1.0);S.add(pG);mk(Bx(.3,.45,.06),0x2b3138,'pendant',pG,.2,1.0,0).rotation.y=.4;mk(Bx(.24,.3,.02),0x3aa0ff,'pendant',pG,.23,1.02,.0).rotation.y=.4;
+const plc=new THREE.Group();plc.position.set(-3.8,0,1.9);S.add(plc);mk(Bx(.7,1.4,.8),0x3b5b8c,'plc',plc,0,.7,0);
+const pl=[0,1,2,3].map(i=>{const l=mk(Bx(.02,.05,.05),0x00ff88,null,plc,.36,1.1-i*.12,0);l.material.emissive.set(0x00aa55);return l});
+function cable(pts,c){const cu=new THREE.CatmullRomCurve3(pts.map(p=>new V3(...p)));const t=new THREE.Mesh(new THREE.TubeGeometry(cu,30,.03,6),M(0x222222));S.add(t);const b=new THREE.Mesh(new THREE.SphereGeometry(.08),new THREE.MeshBasicMaterial({color:c}));S.add(b);return{cu,b}}
+const cabs=[cable([[-3.4,.05,.3],[-2,.05,.5],[-.5,.05,.2],[-.2,.12,0]],0xffd000),cable([[-3.4,.05,1.9],[-3.2,.05,1.2],[-3.4,.05,.3]],0x00e5ff)];
+// ---------- labels
+const LBL=[['ctrl','Robot controller'],['plc','PLC'],['j1','J1 base'],['j2','J2 shoulder'],['j3','J3 elbow'],['j5','J4–J6 wrist'],['tool','Gripper'],['conv','Conveyor'],['sensor','Sensor'],['weld','Weld station'],['bin','Output'],['estop','E-stop']];
+const lblEls=LBL.map(([id,t])=>{const d=document.createElement('div');d.className='lab';d.textContent=t;$('stage').appendChild(d);return d});
+// ---------- state
+let qd=POSE.home.slice(),qa=POSE.home.slice(),step=0,tS=0,from=qd.slice(),to=qd.slice(),dur=1,paused=false,estop=false,gateOpen=false,fault=-1,sel='ctrl',jSel=1;
+let welding=false,holding=false,grip=1,gripT=1,partOK=false,cmpl=0,simT=0,spawnT=0;const hist=[];
+function startStep(i){step=i;tS=0;const p=STEPS[i];
+ if(i===0){partOK=false;if(part.parent!==cvG){part.parent.remove(part);cvG.add(part)}part.position.set(-2.2,.925,0);part.quaternion.identity();part.visible=true}
+ if([2,3,5,6,8,9,11].includes(i)){from=qd.slice();to=POSE[['','','pickUp','pick','','pickUp','weld','','outUp','out','','home'][i]];dur=Math.max(.6,Math.max(...to.map((v,k)=>Math.abs(v-from[k])))/1.4)}
+ if(i===4){tip.attach(part);part.position.set(0,.125,0);part.quaternion.identity();gripT=0}
+ welding=i===7;if(i===10){S.attach(part);gripT=1}}
+const isMove=i=>[2,3,5,6,8,9,11].includes(i),HOLD={1:.8,4:.7,7:1.8,10:.7};
+function running(){return!paused&&!estop&&fault<0&&!gateOpen}
+function update(dt){
+ if(running()){tS+=dt;
+  if(step===0){const x=part.position.x;if(x<0){part.position.x=Math.min(0,x+.8*dt);}else{partOK=true;if(tS>0&&(spawnT+=dt)>.6){spawnT=0;startStep(1)}}}
+  else if(isMove(step)){const u=Math.min(1,tS/dur),s=3*u*u-2*u*u*u;qd=from.map((f,k)=>f+(to[k]-f)*s);if(u>=1&&Math.max(...qd.map((v,k)=>Math.abs(v-qa[k])))<.03)step===11?(cmpl=1.2,startStep(0)):startStep(step+1)}
+  else if(tS>=HOLD[step])startStep(step+1);
+  for(let k=0;k<6;k++)qa[k]+=(qd[k]-qa[k])*(1-Math.exp(-dt*9));
+  if(step===0)slats.forEach(s=>{s.position.x=((s.position.x+2.6+.8*dt*(part.position.x<0?1:0))%5.2)-2.6});
+  hist.push([qd[jSel-1],qa[jSel-1]]);if(hist.length>240)hist.shift();}
+ cmpl=Math.max(0,cmpl-dt);grip+=(gripT-grip)*Math.min(1,dt*8);
+ yawG.rotation.y=qa[0];shG.rotation.z=-qa[1];elG.rotation.z=-qa[2];fRoll.rotation.y=qa[3];wrG.rotation.z=-qa[4];rl6.rotation.y=qa[5];
+ const g=.23+.13*grip;fingA.position.x=g;fingB.position.x=-g;
+}
+function ui(dt){
+ const safe=!estop&&!gateOpen&&fault<0,s=STEPS[step];
+ let st=['RUNNING',s[1],'ok'];
+ if(estop)st=['E-STOP','Servo power cut, brakes on. Release E-stop to resume.','bad'];else if(fault>=0)st=['FAULT','Encoder fault on J'+(fault+1)+': robot stopped, fault logged, diagnostics shown.','bad'];
+ else if(gateOpen)st=['INTERLOCK','Safety gate open: automatic operation is blocked.','warn'];else if(paused)st=['PAUSED','Program paused by operator.','warn'];
+ $('stN').textContent=st[0];$('stN').className=st[2];$('stM').textContent=st[1];
+ [...$('steps').children].forEach((li,i)=>li.className=i===step?'act':i<step?'done':'');
+ const busy=step>=2&&step<=11,on=[safe&&step<=1&&partOK||(safe&&step===0&&!partOK),step>=1&&step<=11,busy,cmpl>0,fault>=0,partOK,safe];
+ [...$('sig').children].forEach((e,i)=>{const d=e.firstChild;d.className='dot '+(i===4?(on[i]?'f':''):(on[i]?'h':''))});
+ sLed.material.emissive.set(partOK?0x00ff66:0xff0000);sLed.material.color.set(partOK?0x00ff66:0xff0000);
+ leds[0].material.emissive.setHex(safe?0x22cc55:0x113311);leds[2].material.emissive.setHex(!safe?0xff3333:0x331111);leds[1].material.emissive.setHex(busy&&running()?0xffaa00:0x332200);
+ pl.forEach((l,i)=>l.material.emissive.setHex((Math.sin(simT*6+i*2)>0&&running())?0x00ff88:0x004422));
+ const j=jSel-1,e=(qd[j]-qa[j])*180/PI;
+ $('ro').innerHTML='J'+jSel+': qd = '+(qd[j]*180/PI).toFixed(1)+'° · qa = '+(qa[j]*180/PI).toFixed(1)+'° · e = <b class="'+(fault===j?'bad':'')+'">'+(fault===j?'ENCODER FAIL':e.toFixed(2)+'°')+'</b>';
+ drawPlot();
+}
+function drawPlot(){const c=$('plot'),x=c.getContext('2d'),W=c.width,H=c.height,cs=getComputedStyle(document.body);x.clearRect(0,0,W,H);if(hist.length<2)return;
+ let lo=1e9,hi=-1e9;hist.forEach(h=>{lo=Math.min(lo,h[0],h[1]);hi=Math.max(hi,h[0],h[1])});if(hi-lo<.2){hi+=.1;lo-=.1}
+ [[0,cs.getPropertyValue('--mut')],[1,'#e8a900']].forEach(([k,col])=>{x.beginPath();x.lineWidth=k?4:3;x.strokeStyle=col;hist.forEach((h,i)=>{const px=i/239*W,py=H-8-(h[k]-lo)/(hi-lo)*(H-16);i?x.lineTo(px,py):x.moveTo(px,py)});x.stroke()});
+ x.font='600 20px Barlow,sans-serif';x.fillStyle=cs.getPropertyValue('--mut');x.fillText('desired qd',8,22);x.fillStyle='#e8a900';x.fillText('actual qa (from encoder)',130,22)}
+// ---------- panel build
+$('steps').innerHTML=STEPS.map(s=>'<li>'+s[0]+'</li>').join('');
+$('sig').innerHTML=SIG.map(s=>'<div class="sg"><span class="dot"></span>'+s+'</div>').join('');
+$('js').innerHTML=[1,2,3,4,5,6].map(i=>'<button data-j="'+i+'" class="'+(i===jSel?'on':'')+'">J'+i+'</button>').join('');
+$('js').onclick=e=>{const j=+e.target.dataset.j;if(!j)return;jSel=j;hist.length=0;[...$('js').children].forEach((b,i)=>b.className=i+1===j?'on':'')};
+$('chips').innerHTML=Object.keys(INFO).map(k=>'<button data-p="'+k+'">'+INFO[k][0].split(' – ')[0].split(' (')[0]+'</button>').join('');
+$('chips').onclick=e=>{if(e.target.dataset.p)select(e.target.dataset.p)};
+function select(id){sel=id;const i=INFO[id];$('card').innerHTML='<h3>'+i[0]+'</h3><p><span class="k">What it does:</span> '+i[1]+'</p><p><span class="k">In the control system:</span> '+i[2]+'</p>';
+ Object.values(parts).flat().forEach(m=>m.material.emissive&&m.material.emissive.set(0))}
+select('ctrl');
+// ---------- controls
+$('bPause').onclick=e=>{paused=!paused;e.target.textContent=paused?'Resume':'Pause'};
+$('bEstop').onclick=e=>{estop=!estop;e.target.textContent=estop?'Release E-stop':'E-stop'};
+$('bGate').onclick=e=>{gateOpen=!gateOpen;e.target.textContent=gateOpen?'Close safety gate':'Open safety gate';e.target.classList.toggle('on',gateOpen)};
+$('bFault').onclick=e=>{if(fault<0){fault=jSel-1;e.target.textContent='Reset fault';e.target.classList.add('on')}else{fault=-1;e.target.textContent='Inject encoder fault';e.target.classList.remove('on')}};
+let labs=true;$('bLab').onclick=e=>{labs=!labs;e.target.classList.toggle('on',labs)};
+// ---------- camera
+let th=.9,ph=1.05,dist=10.5;const tgt=new V3(-.2,1,.2);
+function setCam(){cam.position.set(tgt.x+dist*Math.sin(ph)*Math.cos(th),tgt.y+dist*Math.cos(ph),tgt.z+dist*Math.sin(ph)*Math.sin(th));cam.lookAt(tgt)}
+const ptr=new Map();let moved=0,pd=0;
+cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);ptr.set(e.pointerId,[e.clientX,e.clientY]);moved=0;pd=ptr.size===2?dd():0});
+const dd=()=>{const a=[...ptr.values()];return Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1])};
+cv.addEventListener('pointermove',e=>{if(!ptr.has(e.pointerId))return;const p=ptr.get(e.pointerId),dx=e.clientX-p[0],dy=e.clientY-p[1];ptr.set(e.pointerId,[e.clientX,e.clientY]);moved+=Math.abs(dx)+Math.abs(dy);
+ if(ptr.size===2){const n=dd();if(pd)dist=Math.max(4,Math.min(18,dist*pd/n));pd=n}else{th-=dx*.006;ph=Math.max(.2,Math.min(1.5,ph-dy*.006))}});
+cv.addEventListener('pointerup',e=>{ptr.delete(e.pointerId);if(moved<5&&ptr.size===0)pick(e)});cv.addEventListener('pointercancel',e=>ptr.delete(e.pointerId));
+cv.addEventListener('wheel',e=>{e.preventDefault();dist=Math.max(4,Math.min(18,dist*(1+e.deltaY*.001)))},{passive:false});
+const rc=new THREE.Raycaster(),v2=new THREE.Vector2();
+function pick(e){const r=cv.getBoundingClientRect();v2.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);rc.setFromCamera(v2,cam);
+ const h=rc.intersectObjects(S.children,true).find(h=>h.object.userData.id);if(h){const id=h.object.userData.id;if(id==='estop')$('bEstop').click();select(id)}}
+function resize(){const s=$('stage'),w=s.clientWidth,h=s.clientHeight;R.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix()}
+new ResizeObserver(resize).observe($('stage'));resize();
+// ---------- loop
+let last=performance.now();const tmp=new V3();
+function loop(now){requestAnimationFrame(loop);const rdt=Math.min(.05,(now-last)/1000);last=now;const dt=rdt*$('spd').value;simT+=rdt;
+ update(dt);ui(dt);
+ // sparks + weld light
+ const w=welding&&running();sparks.visible=w;wl.intensity=w?1.5+Math.random()*2:0;
+ if(w){for(let i=0;i<SP;i++){const v=spV[i];if(v.lengthSq()===0||spPos[i*3+1]<0){spPos[i*3]=2.25;spPos[i*3+1]=1.33;spPos[i*3+2]=0;v.set(Math.random()*1.2,Math.random()*1.5+.3,(Math.random()-.5)*1.2)}v.y-=4*rdt;spPos[i*3]+=v.x*rdt;spPos[i*3+1]+=v.y*rdt;spPos[i*3+2]+=v.z*rdt}sparks.geometry.attributes.position.needsUpdate=true}
+ gateP.rotation.y+=((gateOpen?1.3:0)-gateP.rotation.y)*Math.min(1,rdt*6);
+ cabs.forEach((c,i)=>{c.b.visible=running();c.b.position.copy(c.cu.getPoint((simT*(.35+.1*i)+i*.5)%1))});
+ // highlight
+ const k=.35+.25*Math.sin(simT*5);(parts[sel]||[]).forEach(m=>{if(m.material.emissive)m.material.emissive.setRGB(k*.9,k*.6,0)});
+ setCam();R.render(S,cam);
+ const rect=cv.getBoundingClientRect();LBL.forEach(([id],i)=>{const el=lblEls[i],m=(parts[id]||[])[0];if(!labs||!m){el.style.display='none';return}m.getWorldPosition(tmp);tmp.y+=.45;tmp.project(cam);
+  if(tmp.z>1){el.style.display='none';return}el.style.display='';el.style.left=((tmp.x+1)/2*rect.width)+'px';el.style.top=((1-tmp.y)/2*rect.height)+'px'})}
+startStep(0);requestAnimationFrame(loop);
+</script></body></html>
